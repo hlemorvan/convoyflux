@@ -10,7 +10,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.r2dbc.core.DatabaseClient;
 import reactor.test.StepVerifier;
 
-import java.time.Duration;
 import java.time.Instant;
 
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
@@ -26,20 +25,19 @@ class MqttIngestIT extends AbstractIntegrationTest {
                  "lat":48.8566,"lng":2.3522,"speed":50.0,"heading":90.0,
                  "ts":"%s"}""".formatted(Instant.now());
 
-        try (Mqtt5BlockingClient client = MqttClient.builder()
+        Mqtt5BlockingClient client = MqttClient.builder()
                 .useMqttVersion5()
                 .serverHost(HIVEMQ.getHost())
                 .serverPort(HIVEMQ.getMappedPort(1883))
-                .buildBlocking()) {
+                .buildBlocking();
 
-            client.connect();
-            client.publishWith()
-                    .topic("fleet/ile-de-france/vehicle/it-v001/telemetry")
-                    .qos(MqttQos.AT_MOST_ONCE)
-                    .payload(payload.getBytes())
-                    .send();
-            client.disconnect();
-        }
+        client.connect();
+        client.publishWith()
+                .topic("fleet/ile-de-france/vehicle/it-v001/telemetry")
+                .qos(MqttQos.AT_MOST_ONCE)
+                .payload(payload.getBytes())
+                .send();
+        client.disconnect();
 
         // Laisse le temps à l'adapter de traiter le message
         Thread.sleep(500);
