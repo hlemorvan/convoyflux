@@ -8,13 +8,16 @@ import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 @Testcontainers
 public abstract class AbstractIntegrationTest {
 
     @Container
     static final PostgreSQLContainer<?> POSTGRES =
-            new PostgreSQLContainer<>("postgis/postgis:16-3.4")
+            new PostgreSQLContainer<>(
+                    DockerImageName.parse("postgis/postgis:16-3.4")
+                                   .asCompatibleSubstituteFor("postgres"))
                     .withDatabaseName("convoyflux")
                     .withUsername("convoyflux")
                     .withPassword("convoyflux");
