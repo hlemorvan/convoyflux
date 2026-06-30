@@ -4,6 +4,7 @@ package com.convoyflux.integration;
 import com.hivemq.client.mqtt.MqttClient;
 import com.hivemq.client.mqtt.datatypes.MqttQos;
 import com.hivemq.client.mqtt.mqtt5.Mqtt5BlockingClient;
+import com.convoyflux.ConvoyFluxApplication;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -12,7 +13,7 @@ import reactor.test.StepVerifier;
 
 import java.time.Instant;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(classes = ConvoyFluxApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class MqttIngestIT extends AbstractIntegrationTest {
 
     @Autowired

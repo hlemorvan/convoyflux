@@ -101,6 +101,9 @@
                     <configuration>
                         <release>${java.version}</release>
                         <encoding>UTF-8</encoding>
+                        <!-- Spring Framework 7 requires -parameters to resolve
+                             @PathVariable/@RequestParam names via reflection -->
+                        <parameters>true</parameters>
                     </configuration>
                 </plugin>
                 <plugin>

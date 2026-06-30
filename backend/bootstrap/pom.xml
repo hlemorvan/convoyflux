@@ -129,9 +129,11 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <configuration>
-                    <!-- Cucumber via JUnit Platform Suite -->
+                    <!-- IT tests et Cucumber tournent tous sous surefire pour éviter
+                         les incompatibilités failsafe / Spring Boot 4 / Java 25 -->
                     <includes>
                         <include>**/*Test.java</include>
+                        <include>**/*IT.java</include>
                         <include>**/CucumberRunner.java</include>
                     </includes>
                 </configuration>
@@ -140,9 +142,7 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <configuration>
-                    <includes>
-                        <include>**/*IT.java</include>
-                    </includes>
+                    <skipITs>true</skipITs>
                 </configuration>
             </plugin>
             <plugin>

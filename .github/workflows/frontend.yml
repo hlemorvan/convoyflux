@@ -71,9 +71,10 @@ jobs:
         run: docker compose up -d --build
         timeout-minutes: 10
 
-      - name: Wait for frontend to be ready
+      - name: Wait for stack to be ready
         run: |
-          timeout 60 bash -c 'until curl -s http://localhost:3000 > /dev/null; do sleep 2; done'
+          timeout 90 bash -c 'until curl -s http://localhost:3000 > /dev/null; do sleep 2; done'
+          timeout 90 bash -c 'until curl -s --connect-timeout 2 http://localhost:8080/api/vehicles/probe/history?limit=1 > /dev/null 2>&1; do sleep 3; done'
 
       - name: Run Playwright tests
         working-directory: frontend

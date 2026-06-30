@@ -6,14 +6,10 @@ import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
-@Testcontainers
 public abstract class AbstractIntegrationTest {
 
-    @Container
     static final PostgreSQLContainer<?> POSTGRES =
             new PostgreSQLContainer<>(
                     DockerImageName.parse("postgis/postgis:16-3.4")
@@ -22,11 +18,15 @@ public abstract class AbstractIntegrationTest {
                     .withUsername("convoyflux")
                     .withPassword("convoyflux");
 
-    @Container
     static final GenericContainer<?> HIVEMQ =
             new GenericContainer<>("hivemq/hivemq-ce:latest")
                     .withExposedPorts(1883)
                     .waitingFor(Wait.forListeningPort());
+
+    static {
+        POSTGRES.start();
+        HIVEMQ.start();
+    }
 
     @DynamicPropertySource
     static void registerProperties(DynamicPropertyRegistry registry) {

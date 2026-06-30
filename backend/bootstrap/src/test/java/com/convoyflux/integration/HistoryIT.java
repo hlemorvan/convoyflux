@@ -6,6 +6,7 @@ import com.convoyflux.domain.model.Region;
 import com.convoyflux.domain.model.Telemetry;
 import com.convoyflux.domain.model.VehicleId;
 import com.convoyflux.domain.port.out.TelemetryRepository;
+import com.convoyflux.ConvoyFluxApplication;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -17,7 +18,7 @@ import reactor.test.StepVerifier;
 import java.time.Duration;
 import java.time.Instant;
 
-@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
+@SpringBootTest(classes = ConvoyFluxApplication.class, webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 class HistoryIT extends AbstractIntegrationTest {
 
     @LocalServerPort int port;
