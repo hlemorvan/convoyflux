@@ -1,0 +1,12 @@
+simulator:
+  vehicle-count: ${VEHICLE_COUNT:50}
+  region: ${REGION:ile-de-france}
+
+mqtt:
+  broker:
+    host: ${MQTT_BROKER_HOST:localhost}
+    port: ${MQTT_BROKER_PORT:1883}
+
+spring:
+  main:
+    web-application-type: none

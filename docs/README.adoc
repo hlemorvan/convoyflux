@@ -1,0 +1,77 @@
+= convoyflux — Documentation
+:toc: left
+:toclevels: 2
+:icons: font
+:source-highlighter: highlight.js
+
+> Plateforme de suivi de flotte réactive en temps réel · Java 25 · Spring Boot 4 · React 19
+
+== Index général
+
+=== 01 — Documentation utilisateur
+
+[cols="1,3,5",options="header"]
+|===
+|#|Chapitre|Description
+|link:01-utilisateur/01-presentation.adoc[01]|Présentation|Vue d'ensemble, fonctionnalités, captures d'écran
+|link:01-utilisateur/02-demarrage-rapide.adoc[02]|Démarrage rapide|Installer et lancer l'application en 5 minutes
+|link:01-utilisateur/03-carte-temps-reel.adoc[03]|Carte temps réel|Navigation, marqueurs, sélection de véhicule
+|link:01-utilisateur/04-filtres.adoc[04]|Filtres et recherche|Filtrer par id, région, vitesse
+|link:01-utilisateur/05-modes.adoc[05]|Thèmes|Basculer entre mode clair et mode sombre
+|===
+
+=== 02 — Documentation développeur
+
+[cols="1,3,5",options="header"]
+|===
+|#|Chapitre|Description
+|link:02-developpeur/01-architecture.adoc[01]|Architecture|Hexagonale / Ports & Adapters, modules Maven
+|link:02-developpeur/02-domaine.adoc[02]|Domaine métier|Modèles, ports, invariants
+|link:02-developpeur/03-backend.adoc[03]|Backend|Infrastructure MQTT, R2DBC, PostGIS, SSE, RSocket
+|link:02-developpeur/04-frontend.adoc[04]|Frontend|Redux, MapLibre, Tailwind v4, hooks
+|link:02-developpeur/05-tests-et-api.adoc[05]|Tests & API|JUnit 5, Testcontainers, Cucumber, Playwright, endpoints
+|===
+
+=== 03 — Documentation OPS / DevOps
+
+[cols="1,3,5",options="header"]
+|===
+|#|Chapitre|Description
+|link:03-ops/01-prerequis.adoc[01]|Prérequis|Versions, outils requis
+|link:03-ops/02-deploiement.adoc[02]|Déploiement|Docker Compose, variables, ports
+|link:03-ops/03-configuration.adoc[03]|Configuration|Toutes les variables d'environnement
+|link:03-ops/04-ci-cd.adoc[04]|CI / CD|GitHub Actions, pipelines, artefacts
+|===
+
+== Chaîne réactive en un coup d'œil
+
+....
+ ┌──────────────┐   MQTT QoS 0    ┌───────────────┐   subscribe   ┌──────────────────────┐
+ │  Simulateur  │ ──────────────► │   Mosquitto   │ ────────────► │ MqttAdapterSubscriber│
+ │  50 véhicules│                 │    broker     │               └──────────┬───────────┘
+ └──────────────┘                 └───────────────┘                          │ ingest()
+                                                                             ▼
+                                                                   ┌──────────────────────┐
+                                                                   │   TelemetryService   │
+                                                                   └────────┬─────────────┘
+                                                                       save │       publish │
+                                                             ┌──────────────▼──┐  ┌────────▼──────────┐
+                                                             │   PostgreSQL    │  │  Sinks.Many        │
+                                                             │   + PostGIS     │  │  directBestEffort  │
+                                                             └─────────────────┘  └────────┬──────────┘
+                                                                                           │ Flux<Telemetry>
+                                                                              ┌────────────┴────────────┐
+                                                                              │                         │
+                                                                    ┌─────────▼──────┐   ┌─────────────▼───┐
+                                                                    │ SSE /api/stream│   │ RSocket TCP:7000│
+                                                                    └─────────┬──────┘   └─────────────────┘
+                                                                              │ EventSource
+                                                                    ┌─────────▼──────┐
+                                                                    │ React + MapLibre│
+                                                                    │ Redux store     │
+                                                                    └─────────────────┘
+....
+
+'''
+
+_Voir aussi : link:../README.adoc[README du projet] · link:../CONTRIBUTING.md[CONTRIBUTING] · link:../LICENSE[LICENSE]_

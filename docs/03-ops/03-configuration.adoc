@@ -1,0 +1,129 @@
+= 03 — Configuration
+:toc: left
+:icons: font
+
+link:02-deploiement.adoc[← Déploiement] · link:../README.adoc[Index] · link:04-ci-cd.adoc[CI/CD →]
+
+'''
+
+== Variables d'environnement — Backend
+
+Toutes les variables Spring Boot peuvent être surchargées via des variables
+d'environnement en majuscules avec underscore (`SPRING_R2DBC_URL` = `spring.r2dbc.url`).
+
+[cols="2,2,2",options="header"]
+|===
+|Variable|Défaut (dev)|Description
+|`SPRING_R2DBC_URL`|`r2dbc:postgresql://localhost:5432/convoyflux`|URL R2DBC
+|`SPRING_R2DBC_USERNAME`|`convoyflux`|Utilisateur base de données
+|`SPRING_R2DBC_PASSWORD`|`convoyflux`|Mot de passe base de données
+|`SPRING_FLYWAY_URL`|`jdbc:postgresql://localhost:5432/convoyflux`|URL JDBC pour migrations
+|`SPRING_FLYWAY_USER`|`convoyflux`|Utilisateur Flyway (idem R2DBC)
+|`SPRING_FLYWAY_PASSWORD`|`convoyflux`|Mot de passe Flyway
+|`MQTT_HOST`|`localhost`|Hôte du broker MQTT
+|`MQTT_PORT`|`1883`|Port du broker MQTT
+|===
+
+== Variables d'environnement — Simulator
+
+[cols="2,1,2",options="header"]
+|===
+|Variable|Défaut|Description
+|`MQTT_BROKER_HOST`|`localhost`|Hôte du broker MQTT
+|`MQTT_BROKER_PORT`|`1883`|Port du broker MQTT
+|`VEHICLE_COUNT`|`50`|Nombre de véhicules simulés
+|`PUBLISH_INTERVAL_MS`|`1000`|Intervalle de publication (ms)
+|===
+
+== Variables d'environnement — Frontend
+
+Préfixées `VITE_` pour être exposées dans le bundle JavaScript :
+
+[cols="2,2,2",options="header"]
+|===
+|Variable|Défaut|Description
+|`VITE_API_BASE_URL`|`http://localhost:8080`|URL du backend (proxy Vite en dev)
+|`VITE_MAP_STYLE_LIGHT`|OpenFreeMap liberty|Style MapLibre — thème clair
+|`VITE_MAP_STYLE_DARK`|OpenFreeMap dark|Style MapLibre — thème sombre
+|===
+
+NOTE: En mode développement (`npm run dev`), les requêtes `/api/*` sont proxiées
+vers `localhost:8080` par Vite — `VITE_API_BASE_URL` n'est pas utilisée.
+En production (conteneur Nginx), la variable pointe vers l'URL publique du backend.
+
+== Configuration Docker Compose
+
+[source,yaml]
+----
+# docker-compose.yml — variables des services
+services:
+  backend:
+    environment:
+      SPRING_R2DBC_URL:      r2dbc:postgresql://postgres:5432/convoyflux
+      SPRING_FLYWAY_URL:     jdbc:postgresql://postgres:5432/convoyflux
+      SPRING_FLYWAY_USER:    convoyflux
+      SPRING_FLYWAY_PASSWORD: convoyflux
+      MQTT_HOST:             mosquitto
+      MQTT_PORT:             1883
+
+  simulator:
+    environment:
+      MQTT_BROKER_HOST: mosquitto
+      MQTT_BROKER_PORT: 1883
+      VEHICLE_COUNT:    50
+----
+
+== Configuration Mosquitto
+
+`docker/mosquitto/mosquitto.conf` :
+
+[source]
+----
+listener 1883
+allow_anonymous true
+----
+
+En production, remplacer `allow_anonymous true` par une configuration
+TLS + username/password ou certificats client.
+
+== Configuration PostgreSQL
+
+L'image `postgis/postgis:16-3.4` est utilisée directement — l'extension
+PostGIS est pré-installée. Flyway exécute `CREATE EXTENSION IF NOT EXISTS postgis`
+en V1 pour s'assurer qu'elle est activée dans la base.
+
+Variables PostgreSQL standard :
+
+[source,yaml]
+----
+postgres:
+  image: postgis/postgis:16-3.4
+  environment:
+    POSTGRES_DB:       convoyflux
+    POSTGRES_USER:     convoyflux
+    POSTGRES_PASSWORD: convoyflux
+----
+
+== Profils Spring
+
+[cols="1,3",options="header"]
+|===
+|Profil|Comportement
+|`default`|Connexion à localhost (dev local)
+|`docker`|Connexion aux noms de services Docker Compose
+|`test`|Testcontainers démarre ses propres conteneurs
+|===
+
+Activation du profil Docker :
+
+[source,yaml]
+----
+# docker-compose.yml
+backend:
+  environment:
+    SPRING_PROFILES_ACTIVE: docker
+----
+
+'''
+
+link:02-deploiement.adoc[← Déploiement] · link:../README.adoc[Index] · link:04-ci-cd.adoc[CI/CD →]

@@ -1,0 +1,80 @@
+= 02 — Démarrage rapide
+:toc: left
+:icons: font
+
+link:01-presentation.adoc[← Présentation] · link:../README.adoc[Index] · link:03-carte-temps-reel.adoc[Carte →]
+
+'''
+
+== Prérequis
+
+* https://docs.docker.com/get-docker/[Docker] ≥ 24 avec Docker Compose v2
+* Ports libres : *3000*, *8080*, *7000*, *1883*, *5432*
+
+== Lancer l'application
+
+[source,bash]
+----
+git clone https://github.com/hlemorvan/convoyflux.git
+cd convoyflux
+cp .env.example .env        # optionnel — les valeurs par défaut fonctionnent
+docker compose up --build
+----
+
+NOTE: Le premier démarrage télécharge les images Docker et compile le backend Java (~3 min).
+Les suivants utilisent le cache Docker et démarrent en quelques secondes.
+
+== Ouvrir l'interface
+
+Une fois les conteneurs démarrés, ouvrir : *http://localhost:3000*
+
+....
+  Utilisateur          Frontend :3000       Backend :8080       Mosquitto :1883    Simulateur
+      │                     │                    │                    │                │
+      │ ouvre :3000         │                    │                    │                │
+      │────────────────────►│                    │                    │                │
+      │                     │ GET /api/stream     │                    │                │
+      │                     │───────────────────►│                    │                │
+      │                     │◄─── SSE connecté ──│                    │                │
+      │                     │                    │                    │                │
+      │                     │                    │◄── MQTT publish ───│◄── publish ────│
+      │                     │                    │    fleet/.../      │                │
+      │                     │◄─ event:telemetry ─│                    │                │
+      │◄─ marqueur mis à   ─│                    │                    │                │
+      │   jour sur carte    │                    │                    │                │
+....
+
+== Vérifier que tout tourne
+
+[source,bash]
+----
+# État des conteneurs
+docker compose ps
+
+# Flux SSE (Ctrl+C pour arrêter)
+curl http://localhost:8080/api/stream
+
+# Santé du backend
+curl http://localhost:8080/actuator/health
+----
+
+Réponse attendue de l'actuator :
+
+[source,json]
+----
+{"status":"UP","groups":["liveness","readiness"]}
+----
+
+== Arrêter l'application
+
+[source,bash]
+----
+docker compose down          # arrête et supprime les conteneurs
+docker compose down -v       # idem + supprime le volume PostgreSQL
+----
+
+WARNING: `docker compose down -v` supprime définitivement les données PostgreSQL.
+
+'''
+
+link:01-presentation.adoc[← Présentation] · link:../README.adoc[Index] · link:03-carte-temps-reel.adoc[Carte →]

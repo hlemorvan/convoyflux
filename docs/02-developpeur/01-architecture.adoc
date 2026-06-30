@@ -1,0 +1,103 @@
+= 01 — Architecture
+:toc: left
+:icons: font
+
+link:../README.adoc[← Index] · link:02-domaine.adoc[Domaine →]
+
+'''
+
+== Architecture hexagonale (Ports & Adapters)
+
+convoyflux applique strictement l'architecture hexagonale de Cockburn.
+La règle fondamentale : *les dépendances ne pointent que vers l'intérieur*.
+
+....
+ ┌──────────────────────────────────────────────────────────────────────────────┐
+ │  bootstrap (câblage Spring — ApplicationConfig, CorsConfig, FlywayConfig)    │
+ │                                                                              │
+ │  ┌─────────────────── presentation (adapters primaires) ──────────────────┐  │
+ │  │  TelemetrySseController    TelemetryRSocketHandler    VehicleHistory.. │  │
+ │  │  GET /api/stream           fleet.stream (RSocket)    GET /api/vehicles │  │
+ │  └──────────────────────────────────┬──────────────────────────────────────┘  │
+ │                                     │ implémente                             │
+ │  ┌────────────── application ────────▼─────────────────────────────────────┐  │
+ │  │                       TelemetryService                                  │  │
+ │  │               ingest() · history() · (use cases impl)                   │  │
+ │  └──────────────────────────────────┬──────────────────────────────────────┘  │
+ │                                     │ dépend de                              │
+ │  ┌──────────── domain (Java pur — zéro Spring) ──────────────────────────┐  │
+ │  │  model: Telemetry · VehicleId · GeoPoint · Region                     │  │
+ │  │  port/in:  IngestTelemetryUseCase · QueryHistoryUseCase               │  │
+ │  │  port/out: TelemetryRepository · TelemetryBroadcast                   │  │
+ │  └──────────────────────────────────▲──────────────────────────────────────┘  │
+ │                                     │ implémente                             │
+ │  ┌─────────────── infrastructure (adapters secondaires) ──────────────────┐  │
+ │  │  MqttAdapterSubscriber    TelemetryRepositoryAdapter    TelemetrySink.. │  │
+ │  │  + TelemetryJsonDecoder   + TelemetryR2dbcRepo          Sinks.Many     │  │
+ │  │         │ MQTT                     │ R2DBC                              │  │
+ │  │         ▼                          ▼                                    │  │
+ │  │   [Mosquitto]              [PostgreSQL + PostGIS]                       │  │
+ │  └─────────────────────────────────────────────────────────────────────────┘  │
+ └──────────────────────────────────────────────────────────────────────────────┘
+....
+
+=== Règles de dépendances par module Maven
+
+[cols="2,4",options="header"]
+|===
+|Module|Peut dépendre de
+|`domain`|rien (+ reactor-core pour Flux/Mono dans les ports)
+|`application`|`domain` uniquement
+|`infrastructure`|`domain`, `application`, Spring, R2DBC, HiveMQ
+|`presentation`|`domain`, `application`, Spring WebFlux, RSocket
+|`bootstrap`|tous les modules — câble les beans Spring
+|===
+
+== Modules Maven
+
+[source]
+----
+backend/
+├── pom.xml                  ← parent BOM Spring Boot 4
+├── domain/                  ← Java pur, zero Spring
+├── application/             ← TelemetryService
+├── infrastructure/          ← MQTT, R2DBC, Sinks
+├── presentation/            ← SSE, RSocket, REST
+└── bootstrap/               ← @SpringBootApplication, config, tests IT
+----
+
+== Invariant non négociable
+
+IMPORTANT: Aucun appel bloquant dans la chaîne réactive.
+
+* Pas de `.block()` en dehors des tests
+* Pas de JPA / JDBC dans le code applicatif (Flyway seul utilise JDBC au démarrage)
+* Pas de `Thread.sleep()` ni d'I/O synchrone
+
+[source,bash]
+----
+# Vérification — doit retourner vide
+grep -r "\.block()\|import javax.persistence\|import java.sql" \
+  backend/domain backend/application backend/infrastructure backend/presentation
+----
+
+== Chaîne réactive complète
+
+....
+  Simulateur        Mosquitto         MqttAdapter     TelemetryService   PostgreSQL   Sinks.Many   SSE Ctrl    Frontend
+      │                 │                  │                 │               │            │            │           │
+      │─ PUBLISH ──────►│                  │                 │               │            │            │           │
+      │  QoS 0          │─ callback ───────►│                │               │            │            │           │
+      │                 │                  │─ decode JSON ──►│               │            │            │           │
+      │                 │                  │                 │─ save() ──────►│            │            │           │
+      │                 │                  │                 │               │            │            │           │
+      │                 │                  │                 │─ publish() ──────────────►│            │           │
+      │                 │                  │                 │               │            │─ Flux ────►│           │
+      │                 │                  │                 │               │            │            │─ SSE ────►│
+      │                 │                  │                 │               │            │            │  event:   │
+      │                 │                  │                 │               │            │            │ telemetry │
+....
+
+'''
+
+link:../README.adoc[← Index] · link:02-domaine.adoc[Domaine →]

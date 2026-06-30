@@ -1,0 +1,187 @@
+= 04 — Frontend React
+:toc: left
+:icons: font
+:imagesdir: ../screenshots
+
+link:03-backend.adoc[← Backend] · link:../README.adoc[Index] · link:05-tests-et-api.adoc[Tests →]
+
+'''
+
+== Stack technique
+
+[cols="2,3",options="header"]
+|===
+|Technologie|Rôle
+|Vite 5 + React 19|Build et rendu UI
+|TypeScript strict|Typage statique
+|Redux Toolkit|Store centralisé (véhicules, connexion, filtres)
+|Tailwind CSS v4|Styles utilitaires + tokens dark/light
+|MapLibre GL JS v5|Carte vectorielle WebGL sans clé API
+|OpenFreeMap|Tuiles vectorielles libres (`liberty` / `dark`)
+|EventSource (natif)|Client SSE avec reconnexion exponentielle
+|Playwright|Tests E2E
+|===
+
+== Architecture du store Redux
+
+....
+ store/
+ ├── vehiclesSlice.ts
+ │    state: Map<vehicleId, VehicleState>
+ │    VehicleState: { current: Telemetry, history: Telemetry[50] }
+ │    actions: upsertVehicle(Telemetry), selectVehicle(id|null)
+ │
+ ├── connectionSlice.ts
+ │    state: 'connecting' | 'connected' | 'reconnecting' | 'error'
+ │    actions: setStatus(ConnectionStatus)
+ │
+ └── filtersSlice.ts
+      state: { searchId, region, minSpeed }
+      actions: setSearchId, setRegion, setMinSpeed
+....
+
+== Flux de données
+
+....
+ EventSource /api/stream
+       │ event: telemetry
+       │ data: {...}
+       ▼
+ useTelemetryStream (hook)
+       │ dispatch(upsertVehicle(telemetry))
+       │ dispatch(setStatus('connected'))
+       ▼
+ vehiclesSlice reducer
+       │ Map<id, VehicleState> mis à jour
+       ▼
+ selectors (memoïsés via createSelector)
+       │ filteredVehicles — filtre ID + région + vitesse min
+       ▼
+ FleetMap ────► marqueurs MapLibre mis à jour
+ VehiclePanel ► détail du véhicule sélectionné
+....
+
+== Composants principaux
+
+=== FleetMap
+
+image::map-live.png[Carte en direct,align=center]
+
+* MapLibre GL JS v5 initialisé une seule fois dans `useEffect`
+* Style carte : `VITE_MAP_STYLE_LIGHT` / `VITE_MAP_STYLE_DARK` selon le thème
+* Un `Marker` HTML par véhicule, créé via `createMarkerElement(heading, selected)`
+* Layer `vehicle-trail` : `LineString` des 50 derniers points du véhicule sélectionné, tracé en jaune-ambre
+
+=== VehicleMarker
+
+Marqueur SVG en forme de donut :
+
+....
+       ○   ← pastille blanche en haut (cap)
+      ◎   ← anneau : bleu normal | rouge sélectionné
+      (vide)
+....
+
+[source,typescript]
+----
+// SVG inline — pas de fichier externe, taille fixe 26×26
+const el = document.createElement('div')
+el.innerHTML = `
+  <svg viewBox="0 0 24 24" width="26" height="26">
+    <circle class="ring" cx="12" cy="12" r="10"
+            fill="${color}" stroke="white" stroke-width="1.5"/>
+    <circle cx="12" cy="12" r="5" fill="white"/>
+    <circle cx="12" cy="4" r="2.5" fill="white" opacity="0.9"/>
+  </svg>`
+----
+
+Le `transform: rotate(${heading}deg)` est appliqué sur le `<div>` container.
+La couleur de l'anneau est mise à jour sans recrér le marqueur en ciblant
+`.ring` via `el.querySelector('.ring')`.
+
+=== VehiclePanel
+
+image::vehicle-panel.png[Panneau de détail,align=center]
+
+Panneau latéral droit — affiché uniquement si un véhicule est sélectionné.
+Met à jour *en temps réel* via selector Redux sans re-rendu de la carte.
+
+=== FilterBar
+
+image::filters.png[Filtres,align=center]
+
+Trois contrôles en haut de page :
+
+* `<input>` texte → `setSearchId`
+* `<input>` texte → `setRegion`
+* `<input type="range">` → `setMinSpeed`
+
+Le filtrage est purement client-side, appliqué par le selector `filteredVehicles`.
+
+=== ConnectionBadge
+
+image::connection-badge.png[Badge de connexion,align=right]
+
+Badge positionné `fixed bottom-4 right-4`, couleur selon `connectionSlice.status`.
+
+== Hook useTelemetryStream
+
+[source,typescript]
+----
+// EventSource avec reconnexion exponentielle (2s → 4s → … → 30s max)
+function useTelemetryStream() {
+  const dispatch = useDispatch()
+
+  useEffect(() => {
+    let attempt = 0
+    let es: EventSource
+    let timer: ReturnType<typeof setTimeout>
+
+    function connect() {
+      dispatch(setStatus(attempt === 0 ? 'connecting' : 'reconnecting'))
+      es = new EventSource('/api/stream')
+
+      es.addEventListener('telemetry', (e) => {
+        const t = JSON.parse(e.data)
+        dispatch(upsertVehicle(t))
+        dispatch(setStatus('connected'))
+        attempt = 0
+      })
+
+      es.onerror = () => {
+        es.close()
+        dispatch(setStatus('error'))
+        const delay = Math.min(2 ** attempt * 1000, 30_000)
+        attempt++
+        timer = setTimeout(connect, delay)
+      }
+    }
+
+    connect()
+    return () => { es?.close(); clearTimeout(timer) }
+  }, [dispatch])
+}
+----
+
+== Thèmes clair / sombre
+
+La préférence système est détectée au premier rendu via
+`window.matchMedia('(prefers-color-scheme: dark)')`.
+Un bouton bascule ajoute / retire la classe `dark` sur `<html>`.
+MapLibre recharge le style de tuiles correspondant.
+
+== Variables d'environnement
+
+[cols="2,3",options="header"]
+|===
+|Variable|Valeur par défaut
+|`VITE_API_BASE_URL`|`http://localhost:8080`
+|`VITE_MAP_STYLE_LIGHT`|`https://tiles.openfreemap.org/styles/liberty`
+|`VITE_MAP_STYLE_DARK`|`https://tiles.openfreemap.org/styles/dark`
+|===
+
+Définies dans `.env.development` et surchargées par les variables Docker Compose.
+
+'''
+
+link:03-backend.adoc[← Backend] · link:../README.adoc[Index] · link:05-tests-et-api.adoc[Tests →]

@@ -1,0 +1,241 @@
+= 05 — Tests et API
+:toc: left
+:icons: font
+
+link:04-frontend.adoc[← Frontend] · link:../README.adoc[Index] · link:../03-ops/01-prerequis.adoc[Ops →]
+
+'''
+
+== Stratégie de tests
+
+....
+ ┌─────────────────────────────────────────────────────────────────┐
+ │  Pyramide des tests                                              │
+ │                                                                  │
+ │              ╱ E2E Playwright ╲       — 5 specs                 │
+ │             ╱─────────────────╲                                 │
+ │            ╱  IT Testcontainers ╲     — 3 classes               │
+ │           ╱────────────────────╲                                │
+ │          ╱  Cucumber BDD         ╲    — 2 features              │
+ │         ╱──────────────────────╲                               │
+ │        ╱   Unitaires JUnit/Vitest ╲   — domaine, adapters, UI  │
+ │       ╱──────────────────────────╲                             │
+ └─────────────────────────────────────────────────────────────────┘
+....
+
+== Tests unitaires backend (JUnit 5 + Mockito)
+
+=== Domain — value objects
+
+[source,java]
+----
+@Test void vehicleId_blank_throws() {
+    assertThrows(IllegalArgumentException.class, () -> new VehicleId(""));
+}
+@Test void geoPoint_latOutOfRange_throws() {
+    assertThrows(IllegalArgumentException.class, () -> new GeoPoint(91.0, 0.0));
+}
+----
+
+=== Application — TelemetryService
+
+[source,java]
+----
+@ExtendWith(MockitoExtension.class)
+class TelemetryServiceTest {
+    @Mock TelemetryRepository repo;
+    @Mock TelemetryBroadcast  broadcast;
+
+    @Test void ingest_savesAndPublishes() {
+        var svc = new TelemetryService(repo, broadcast);
+        var t   = telemetry();
+        when(repo.save(t)).thenReturn(Mono.empty());
+
+        svc.ingest(t).block();
+
+        verify(repo).save(t);
+        verify(broadcast).publish(t);
+    }
+}
+----
+
+=== Infrastructure — TelemetrySinkBroadcast
+
+[source,java]
+----
+@Test void publish_emitToSubscribers() {
+    var sink = new TelemetrySinkBroadcast();
+    var t    = telemetry();
+
+    StepVerifier.create(sink.asFlux().take(1))
+        .then(() -> sink.publish(t))
+        .expectNext(t)
+        .verifyComplete();
+}
+----
+
+== Tests d'intégration backend (Testcontainers)
+
+`MqttIngestIT` démarre deux conteneurs :
+
+* `hivemq/hivemq-ce:latest` (Testcontainers)
+* `postgis/postgis:16-3.4` (Testcontainers)
+
+[source,java]
+----
+@SpringBootTest(webEnvironment = RANDOM_PORT)
+@Testcontainers
+class MqttIngestIT {
+
+    @Container
+    static final HiveMQContainer hivemq =
+        new HiveMQContainer(DockerImageName.parse("hivemq/hivemq-ce:latest"));
+
+    @Container
+    static final PostgreSQLContainer<?> postgres =
+        new PostgreSQLContainer<>("postgis/postgis:16-3.4");
+
+    @Test void publishMqtt_persistsInDb_andStreamsToSse() {
+        // 1. Publier un payload MQTT
+        // 2. WebTestClient GET /api/stream → vérifier ServerSentEvent
+        // 3. R2DBC → vérifier ligne en base
+    }
+}
+----
+
+== Tests BDD Cucumber
+
+[source,gherkin]
+----
+Feature: Ingestion telemetry
+
+  Scenario: réception et diffusion d'une position
+    Given le broker MQTT est disponible
+    When  je publie une position GPS pour le véhicule "v-001"
+    Then  je reçois l'événement SSE pour "v-001" dans les 5 secondes
+
+  Scenario: persistance vérifiée en base
+    Given le broker MQTT est disponible
+    When  je publie une position GPS pour le véhicule "v-002"
+    Then  la position de "v-002" est enregistrée en base de données
+----
+
+== Tests frontend (Vitest)
+
+=== Reducer Redux
+
+[source,typescript]
+----
+it('upsertVehicle adds to state', () => {
+  const t = telemetry('v-001')
+  const s = reducer(undefined, upsertVehicle(t))
+  expect(s.entities['v-001'].current.speed).toBe(t.speed)
+})
+
+it('history keeps at most 50 points', () => {
+  let s = initialState
+  for (let i = 0; i < 55; i++)
+    s = reducer(s, upsertVehicle({ ...telemetry('v-001'), speed: i }))
+  expect(s.entities['v-001'].history).toHaveLength(50)
+})
+----
+
+=== Hook useTelemetryStream (mock EventSource)
+
+[source,typescript]
+----
+it('dispatches upsertVehicle on telemetry event', async () => {
+  const mockEs = createMockEventSource()
+  vi.spyOn(window, 'EventSource').mockReturnValue(mockEs as any)
+  renderHook(() => useTelemetryStream(), { wrapper: storeWrapper })
+  mockEs.emit('telemetry', JSON.stringify(telemetry('v-003')))
+  expect(store.getState().vehicles.entities['v-003']).toBeDefined()
+})
+----
+
+== Tests E2E Playwright
+
+[cols="2,3",options="header"]
+|===
+|Spec|Ce qui est vérifié
+|`map-loads.spec.ts`|Carte chargée, tuiles visibles, marqueurs présents
+|`vehicle-selection.spec.ts`|Clic marqueur → panneau latéral avec données
+|`live-update.spec.ts`|Marqueur se déplace (position change) en 5 s
+|`dark-mode.spec.ts`|Toggle dark/light, style carte change
+|`reconnect.spec.ts`|Couper SSE → badge reconnexion → rétabli
+|`screenshots.spec.ts`|Screenshots pour la documentation (SSE mocké)
+|===
+
+=== Mocking SSE dans Playwright
+
+[source,typescript]
+----
+await page.route('/api/stream', async route => {
+  const body = [
+    'event: telemetry\n',
+    `data: ${JSON.stringify(payload)}\n\n`,
+  ].join('')
+  await route.fulfill({
+    status: 200,
+    headers: { 'Content-Type': 'text/event-stream' },
+    body,
+  })
+})
+----
+
+NOTE: `route.fulfill()` ferme la connexion après envoi → `EventSource` repasse
+en état d'erreur immédiatement. Ne pas attendre `✓ Connecté` — attendre
+l'apparition des marqueurs à la place.
+
+== Référence API REST
+
+=== GET /api/stream
+
+[cols="1,3",options="header"]
+|===
+|Paramètre|Description
+|`Accept`|`text/event-stream` (obligatoire)
+|===
+
+Format de réponse :
+
+[source]
+----
+event: telemetry
+data: {
+  "vehicleId": "v-042",
+  "region":    "ile-de-france",
+  "lat":       48.8566,
+  "lng":       2.3522,
+  "speed":     45.2,
+  "heading":   127.0,
+  "ts":        "2026-06-30T10:00:00Z"
+}
+----
+
+=== GET /api/vehicles/{vehicleId}/history
+
+[cols="1,1,2",options="header"]
+|===
+|Paramètre|Type|Description
+|`vehicleId`|path|Identifiant du véhicule
+|`limit`|query (défaut 50)|Nombre de points à retourner
+|===
+
+Réponse : `application/json` — tableau de `TelemetryDto` triés par `ts` DESC.
+
+=== RSocket TCP — fleet.stream
+
+[source]
+----
+host: localhost
+port: 7000
+route: fleet.stream
+interaction: request-stream
+payload: vide (aucun filtre)
+response: Flux<TelemetryDto>
+----
+
+'''
+
+link:04-frontend.adoc[← Frontend] · link:../README.adoc[Index] · link:../03-ops/01-prerequis.adoc[Ops →]

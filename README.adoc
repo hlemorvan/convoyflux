@@ -1,0 +1,298 @@
+= convoyflux — suivi de flotte réactif en temps réel
+:toc: left
+:toclevels: 3
+:icons: font
+:source-highlighter: highlight.js
+:imagesdir: docs/screenshots
+
+image:https://github.com/hlemorvan/convoyflux/actions/workflows/backend.yml/badge.svg[Backend CI,link=https://github.com/hlemorvan/convoyflux/actions/workflows/backend.yml]
+image:https://github.com/hlemorvan/convoyflux/actions/workflows/frontend.yml/badge.svg[Frontend CI,link=https://github.com/hlemorvan/convoyflux/actions/workflows/frontend.yml]
+image:https://img.shields.io/badge/License-GPLv3-blue.svg[License: GPL v3,link=LICENSE]
+image:https://img.shields.io/badge/Java-25-orange[Java 25]
+image:https://img.shields.io/badge/Spring_Boot-4.x-6DB33F[Spring Boot 4]
+
+____
+Plateforme de suivi de flotte en temps réel, réactive de bout en bout : télémétrie de véhicules
+IoT simulés en MQTT, backend Spring WebFlux non-bloquant (R2DBC/PostGIS, RSocket & SSE), front
+React + MapLibre affichant les positions en direct. Tests TU, intégration (Testcontainers), BDD
+Cucumber & E2E Playwright. CI GitHub Actions. GPLv3.
+____
+
+== Vue d'ensemble
+
+convoyflux est une démonstration complète de stack **réactive de bout en bout** :
+aucun thread ne bloque jamais entre la base de données et le navigateur.
+50 véhicules simulés publient leur position chaque seconde via MQTT ;
+le backend ingère, persiste et rediffuse en temps réel via SSE ;
+le frontend affiche chaque mouvement sur une carte WebGL sans rechargement.
+
+image::overview.png[Vue d'ensemble de l'interface,align=center]
+
+== Fonctionnalités
+
+=== Carte temps réel
+
+50 véhicules se déplacent en direct sur une carte https://maplibre.org[MapLibre GL JS]
+centrée sur Paris (lat 48.8566, lng 2.3522, zoom 12), alimentée par les tuiles vectorielles
+gratuites https://openfreemap.org[OpenFreeMap] (aucune clé d'API requise).
+
+Chaque marqueur est une flèche SVG **orientée selon le cap** (`heading`) du véhicule,
+dont la couleur indique la vitesse :
+
+* 🟢 vert — < 30 km/h
+* 🔵 bleu — 30–90 km/h
+* 🔴 rouge — > 90 km/h
+
+image::map-live.png[Carte en direct avec marqueurs orientés,align=center]
+
+=== Sélection d'un véhicule et panneau de détail
+
+Un clic sur un marqueur ouvre un **panneau latéral** qui affiche en temps réel
+la télémétrie du véhicule sélectionné et sa trajectoire récente (50 derniers points).
+Le marqueur passe en rouge pour le distinguer.
+
+image::vehicle-panel.png[Panneau de détail d'un véhicule,align=center]
+
+=== Barre de filtres
+
+La barre en haut de l'écran permet de **filtrer les véhicules affichés** en temps réel,
+sans rechargement :
+
+* **Recherche par identifiant** — filtre dès la saisie (ex. `v-04`)
+* **Région** — filtre par région MQTT (ex. `ile-de-france`)
+* **Vitesse minimum** — curseur de 0 à 200 km/h
+
+image::filters.png[Barre de filtres — recherche "v-0" active,align=center]
+
+=== Mode sombre / clair
+
+Le bouton en bas à droite bascule entre le thème clair et sombre.
+La carte change de style simultanément (tuiles `liberty` ↔ `dark` d'OpenFreeMap).
+La préférence système (`prefers-color-scheme`) est respectée au premier chargement.
+
+[cols="1a,1a",frame=none,grid=none]
+|===
+|image::light-mode.png[Mode clair,title="Mode clair — tuiles liberty OpenFreeMap"]
+|image::dark-mode-full.png[Mode sombre,title="Mode sombre — tuiles dark OpenFreeMap"]
+|===
+
+=== Indicateur de connexion et reconnexion automatique
+
+Un badge en bas à droite reflète l'état du flux SSE en permanence.
+En cas de perte de connexion, le hook `useTelemetryStream` tente une reconnexion
+avec backoff exponentiel (délai × 2 à chaque tentative, plafonné à 30 s).
+
+image::connection-badge.png[Badge de connexion SSE,align=center]
+
+.États possibles du badge
+....
+  ┌───────────────────┐   ┌────────────────────────┐
+  │ ⟳ Connexion…      │   │ ✓ Connecté             │
+  │  [jaune]          │   │  [vert]                │
+  └───────────────────┘   └────────────────────────┘
+  ┌───────────────────┐   ┌────────────────────────┐
+  │ ⟳ Reconnexion…    │   │ ✕ Erreur               │
+  │  [orange]         │   │  Connexion perdue —    │
+  │                   │   │  reconnexion dans 8s   │
+  └───────────────────┘   │  [rouge]               │
+                          └────────────────────────┘
+....
+
+=== Historique des positions
+
+Un endpoint REST stream l'historique des positions d'un véhicule au format NDJSON
+(Newline-Delimited JSON), entièrement réactif via `Flux<TelemetryDto>` :
+
+[source,bash]
+----
+curl http://localhost:8080/api/vehicles/v-042/history?limit=50
+----
+
+== Chaîne réactive — comment ça marche
+
+....
+ ① Simulateur (50 véhicules)
+    └─ VehiclePublisher.tick() → marche aléatoire bbox Île-de-France
+       └─ HiveMQ Client → MQTT QoS 0
+          └─ topic : fleet/ile-de-france/vehicle/v-042/telemetry
+              payload JSON : {vehicleId, region, lat, lng, speed, heading, ts}
+
+ ② Broker Mosquitto (Docker)
+    └─ fan-in : les véhicules ne connaissent pas le backend
+
+ ③ Backend Spring WebFlux — MqttAdapterSubscriber
+    └─ HiveMQ Client (callback async) → decode JSON → Telemetry (record domain)
+       └─ IngestTelemetryUseCase.ingest(telemetry)
+            ├─ TelemetryRepository.save()  → R2DBC → PostgreSQL + PostGIS
+            └─ TelemetryBroadcast.publish() → Sinks.Many.multicast().directBestEffort()
+
+ ④ Diffusion temps réel (abonnés actifs)
+    ├─ SSE  : GET /api/stream  → Flux<ServerSentEvent<TelemetryDto>>
+    │          → browser EventSource → Redux dispatch → React re-render
+    └─ RSocket "fleet.stream" → Flux<TelemetryDto>  (clients TCP non-browser)
+
+ ⑤ Frontend
+    └─ useTelemetryStream hook → EventSource → dispatch(telemetryReceived)
+         ├─ vehiclesSlice : mise à jour position + trail (50 pts max)
+         └─ FleetMap : marqueur repositionné + rotation heading
+....
+
+== Démarrage rapide
+
+[source,bash]
+----
+git clone https://github.com/hlemorvan/convoyflux.git
+cd convoyflux
+cp .env.example .env        # ajuster si besoin
+docker compose up --build
+----
+
+Ouvrir http://localhost:3000 — la carte Paris apparaît avec ~50 véhicules en mouvement.
+
+=== Ports exposés
+
+[cols="1,2,3",options="header"]
+|===
+|Port |Service |Description
+|3000 |Frontend (nginx) |Interface cartographique React
+|8080 |Backend |REST + SSE (`/api/stream`, `/api/vehicles/{id}/history`)
+|7000 |Backend |RSocket TCP (`fleet.stream`)
+|1883 |Mosquitto |Broker MQTT
+|5432 |PostgreSQL |Base de données (accès direct en dev)
+|===
+
+== Tests
+
+=== Backend
+
+[source,bash]
+----
+cd backend
+
+# TU — domain, application, infrastructure, presentation
+mvn test -pl domain,application,infrastructure,presentation -B
+
+# IT + Cucumber + JaCoCo (Testcontainers lance Docker automatiquement)
+mvn verify -pl bootstrap -am -B
+----
+
+Suites couvertes :
+
+* JUnit 5 + StepVerifier — value objects, `TelemetryService`, `TelemetrySinkBroadcast`, décodeur JSON
+* Testcontainers (`hivemq/hivemq-ce` + `postgis/postgis:16-3.4`) — chaîne MQTT → R2DBC → SSE de bout en bout
+* Cucumber BDD — `telemetry_ingest.feature` (réception + persistance + diffusion), `backpressure.feature`
+
+=== Simulateur
+
+[source,bash]
+----
+cd simulator && mvn test -B
+----
+
+=== Frontend
+
+[source,bash]
+----
+cd frontend
+npm ci
+npm test             # Vitest + React Testing Library (reducers, VehiclePanel)
+npm run test:e2e     # Playwright (nécessite docker compose up)
+----
+
+Specs Playwright : `map-loads`, `vehicle-selection`, `dark-mode`, `live-update`, `reconnect`.
+
+== Architecture des modules
+
+[source]
+----
+convoyflux/
+├── backend/                       # Maven multi-modules
+│   ├── domain/                    # Java pur + Reactor — zéro Spring
+│   │   ├── model/                 #   VehicleId, Region, GeoPoint, Telemetry (records)
+│   │   └── port/in+out/           #   IngestTelemetryUseCase, QueryHistoryUseCase,
+│   │                              #   TelemetryRepository, TelemetryBroadcast
+│   ├── application/               # TelemetryService (implémente les use cases)
+│   ├── infrastructure/            # Adapters techniques
+│   │   ├── r2dbc/                 #   TelemetryEntity, TelemetryRepositoryAdapter
+│   │   ├── mqtt/                  #   MqttAdapterSubscriber, TelemetryJsonDecoder
+│   │   ├── reactive/              #   TelemetrySinkBroadcast (Sinks.Many)
+│   │   └── db/migration/          #   V1__schema.sql (PostGIS), V2__indexes.sql
+│   ├── presentation/              # Controllers WebFlux
+│   │   ├── sse/                   #   TelemetrySseController (GET /api/stream)
+│   │   ├── rsocket/               #   TelemetryRSocketHandler (fleet.stream)
+│   │   └── rest/                  #   VehicleHistoryController (GET /api/vehicles/…)
+│   └── bootstrap/                 # @SpringBootApplication, CorsConfig, Dockerfile
+│       └── test/                  #   MqttIngestIT, SseStreamIT, HistoryIT, Cucumber
+├── simulator/                     # Maven standalone — publie MQTT QoS 0
+│   └── Fleet → VehiclePublisher   #   marche aléatoire, Flux.interval(20ms)
+├── frontend/                      # Vite 6 + React 19 + TypeScript
+│   ├── store/                     #   vehiclesSlice, connectionSlice
+│   ├── hooks/                     #   useTelemetryStream (SSE + reconnexion expo.)
+│   ├── components/Map/            #   FleetMap (MapLibre), VehicleMarker (SVG)
+│   ├── components/Panel/          #   VehiclePanel (détail + trajectoire)
+│   ├── components/Filters/        #   FilterBar (id, région, vitesse)
+│   └── tests/                     #   Vitest + Playwright (5 specs E2E)
+├── docker/mosquitto/              # mosquitto.conf
+├── .github/workflows/             # backend.yml, frontend.yml, docker.yml
+└── docker-compose.yml
+----
+
+== Choix techniques
+
+=== Spring WebFlux + R2DBC
+
+Aucun thread ne bloque en I/O. Spring WebFlux (Netty, event-loop) associé à R2DBC
+(driver PostgreSQL réactif) garantit la chaîne non-bloquante de la base jusqu'au
+navigateur. JPA et JDBC sont exclus du code applicatif — Flyway les utilise uniquement
+au démarrage pour migrer le schéma.
+
+=== RSocket pour le canal bidirectionnel
+
+RSocket expose un canal `request-stream` avec backpressure native sur TCP (port 7000).
+Réservé aux clients non-browser (outils, services internes). Le navigateur utilise SSE
+(`EventSource`), suffisant pour un flux unidirectionnel serveur → client.
+
+=== Backpressure au pont MQTT → Reactor
+
+`Sinks.Many.multicast().directBestEffort()` : si un abonné SSE est lent, ses trames
+sont droppées individuellement sans bloquer les autres ni le producteur MQTT.
+Les positions périmées n'ont aucune valeur pour un suivi temps réel.
+
+=== Architecture hexagonale
+
+La couche `domain` ne dépend d'aucun framework.
+La couche `application` ne dépend que de `domain`.
+Les frameworks sont confinés dans `infrastructure` et `presentation`, câblés dans `bootstrap`.
+Cette séparation permet de tester la logique métier avec des mocks simples,
+sans démarrer Spring.
+
+=== MapLibre GL JS + OpenFreeMap
+
+MapLibre GL JS (fork libre de Mapbox GL JS v1) offre un rendu vectoriel WebGL.
+OpenFreeMap fournit des tuiles gratuites sans clé d'API — styles `liberty` (clair)
+et `dark` (sombre) depuis la même source, commutés par le toggle Tailwind.
+
+== Variables d'environnement
+
+Copier `.env.example` en `.env` :
+
+[source,bash]
+----
+DB_USER=convoyflux
+DB_PASSWORD=convoyflux
+VEHICLE_COUNT=50
+VITE_MAP_STYLE_LIGHT=https://tiles.openfreemap.org/styles/liberty
+VITE_MAP_STYLE_DARK=https://tiles.openfreemap.org/styles/dark
+----
+
+== Licence
+
+Ce projet est distribué sous la licence *GNU General Public License v3.0* ou ultérieure.
+Voir le fichier link:LICENSE[LICENSE] pour le texte complet.
+
+Chaque fichier source porte l'en-tête SPDX :
+
+[source]
+----
+// SPDX-License-Identifier: GPL-3.0-or-later
+----

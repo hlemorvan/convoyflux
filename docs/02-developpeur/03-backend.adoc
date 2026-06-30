@@ -1,0 +1,180 @@
+= 03 — Backend Spring WebFlux
+:toc: left
+:icons: font
+
+link:02-domaine.adoc[← Domaine] · link:../README.adoc[Index] · link:04-frontend.adoc[Frontend →]
+
+'''
+
+== Stack technique
+
+[cols="2,3",options="header"]
+|===
+|Technologie|Rôle
+|Spring Boot 4 + WebFlux|Serveur HTTP non-bloquant (Netty)
+|R2DBC + PostgreSQL|Persistance réactive (driver `r2dbc-postgresql`)
+|PostGIS|Extension PostgreSQL pour les colonnes géographiques
+|Flyway (JDBC)|Migration du schéma au démarrage uniquement
+|HiveMQ Client|Abonnement MQTT 5 asynchrone
+|Reactor `Sinks.Many`|Bus interne de diffusion in-process
+|RSocket TCP|Protocole binaire pour clients non-browser (port 7000)
+|===
+
+== Modules Maven
+
+....
+ backend/
+ ├── pom.xml                 ← BOM parent Spring Boot 4
+ ├── domain/                 ← Java pur, zero Spring
+ │    └── pom.xml            ← dépendance : reactor-core uniquement
+ ├── application/
+ │    └── pom.xml            ← dépendance : domain
+ ├── infrastructure/
+ │    └── pom.xml            ← domain, application, Spring, R2DBC, HiveMQ
+ ├── presentation/
+ │    └── pom.xml            ← domain, application, Spring WebFlux, RSocket
+ └── bootstrap/
+      └── pom.xml            ← tous les modules, Spring Boot starter, Testcontainers
+....
+
+== Module infrastructure
+
+=== Schéma de base (Flyway V1)
+
+[source,sql]
+----
+CREATE EXTENSION IF NOT EXISTS postgis;
+
+CREATE TABLE IF NOT EXISTS telemetry (
+    id         BIGSERIAL PRIMARY KEY,
+    vehicle_id VARCHAR(64)        NOT NULL,
+    region     VARCHAR(64),
+    lat        DOUBLE PRECISION   NOT NULL,
+    lng        DOUBLE PRECISION   NOT NULL,
+    speed      DOUBLE PRECISION,
+    heading    DOUBLE PRECISION,
+    ts         TIMESTAMPTZ        NOT NULL,
+    location   GEOGRAPHY(POINT, 4326)
+               GENERATED ALWAYS AS
+               (ST_SetSRID(ST_MakePoint(lng, lat), 4326)) STORED
+);
+----
+
+La colonne `location` est *calculée* — jamais écrite par l'application.
+Flyway s'exécute via un `@Bean(initMethod="migrate")` qui ouvre une connexion
+JDBC jetable au démarrage (`spring.flyway.url`), indépendamment de R2DBC.
+
+=== Adapter MQTT
+
+....
+ Mosquitto
+     │ QoS 0
+     ▼
+ MqttAdapterSubscriber (SmartInitializingSingleton)
+     │ HiveMQ Mqtt5AsyncClient
+     │ subscribe("fleet/+/vehicle/+/telemetry")
+     │
+     │  callback Flowable<Mqtt5Publish>
+     ▼
+ TelemetryJsonDecoder.decode(bytes)
+     │ ObjectMapper → Telemetry
+     ▼
+ IngestTelemetryUseCase.ingest(Telemetry)
+....
+
+[IMPORTANT]
+====
+Les `ByteBuffer` retournés par HiveMQ sont en lecture seule (pas de tableau
+backing accessible). Ne jamais appeler `.array()` sur ces buffers :
+
+[source,java]
+----
+// Correct :
+byte[] arr = new byte[bb.remaining()];
+bb.get(arr);
+// Incorrect (lance ReadOnlyBufferException) :
+byte[] arr = bb.array();
+----
+====
+
+=== TelemetrySinkBroadcast
+
+[source,java]
+----
+Sinks.Many<Telemetry> sink =
+    Sinks.many().multicast().directBestEffort();
+----
+
+`directBestEffort()` : multicast sans blocage.
+Si un abonné SSE est lent, sa trame est droppée individuellement —
+les autres abonnés et le thread MQTT ne sont pas impactés.
+
+== Module presentation
+
+=== Endpoint SSE
+
+[source]
+----
+GET /api/stream
+Accept: text/event-stream
+
+event: telemetry
+data: {"vehicleId":"v-042","region":"ile-de-france","lat":48.8566,
+       "lng":2.3522,"speed":45.2,"heading":127.0,"ts":"2026-06-30T10:00:00Z"}
+----
+
+Le contrôleur consomme `TelemetryBroadcast.asFlux()` et mappe chaque
+`Telemetry` en `ServerSentEvent<TelemetryDto>`.
+
+=== Endpoint historique
+
+[source]
+----
+GET /api/vehicles/{vehicleId}/history?limit=50
+Content-Type: application/json
+
+[{"vehicleId":...}, ...]
+----
+
+=== RSocket (TCP port 7000)
+
+[source]
+----
+route: "fleet.stream"
+interaction: request-stream
+response: Flux<TelemetryDto>
+----
+
+== Module bootstrap
+
+Contient uniquement :
+
+* `ConvoyFluxApplication.java` — `@SpringBootApplication`
+* `config/ApplicationConfig.java` — beans `ObjectMapper`, `WebClient`
+* `config/CorsConfig.java` — CORS `*` sur `/api/**`
+* `config/FlywayConfig.java` — migration au démarrage
+
+[source,yaml]
+----
+# application.yml (extrait)
+spring:
+  r2dbc:
+    url: r2dbc:postgresql://localhost:5432/convoyflux
+    username: convoyflux
+    password: convoyflux
+  flyway:
+    url:      jdbc:postgresql://localhost:5432/convoyflux
+    user:     convoyflux
+    password: convoyflux
+
+mqtt:
+  host: localhost
+  port: 1883
+----
+
+Les variables d'environnement Docker Compose (`SPRING_R2DBC_URL`,
+`SPRING_FLYWAY_URL`, `MQTT_HOST`…) surchargent ces valeurs.
+
+'''
+
+link:02-domaine.adoc[← Domaine] · link:../README.adoc[Index] · link:04-frontend.adoc[Frontend →]

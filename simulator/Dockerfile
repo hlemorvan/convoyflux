@@ -1,0 +1,11 @@
+FROM maven:3.9-eclipse-temurin-25-alpine AS builder
+WORKDIR /app
+COPY pom.xml .
+RUN mvn dependency:go-offline -B -q
+COPY src src/
+RUN mvn package -DskipTests -B -q
+
+FROM eclipse-temurin:25-jre-alpine
+WORKDIR /app
+COPY --from=builder /app/target/simulator-*.jar app.jar
+ENTRYPOINT ["java", "-jar", "app.jar"]

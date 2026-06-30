@@ -1,0 +1,182 @@
+= 04 — CI/CD GitHub Actions
+:toc: left
+:icons: font
+
+link:03-configuration.adoc[← Configuration] · link:../README.adoc[Index]
+
+'''
+
+== Pipelines
+
+Trois workflows GitHub Actions couvrent le projet :
+
+....
+ Push / Pull Request
+       │
+       ├──► backend.yml    — build Maven, TU, tests IT (Testcontainers)
+       │
+       ├──► frontend.yml   — lint, build Vite, Vitest, Playwright E2E
+       │
+       └──► docker.yml     — docker compose build (vérification images)
+....
+
+== backend.yml
+
+[source,yaml]
+----
+name: Backend CI
+on: [push, pull_request]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: temurin
+
+      - uses: actions/cache@v4
+        with:
+          path: ~/.m2/repository
+          key: ${{ runner.os }}-maven-${{ hashFiles('**/pom.xml') }}
+
+      - name: Build & test
+        working-directory: backend
+        run: mvn verify -B
+
+      - name: Upload JaCoCo report
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: backend/bootstrap/target/site/jacoco/
+        if: always()
+----
+
+Testcontainers lance automatiquement HiveMQ et PostGIS via Docker Engine
+(disponible sur `ubuntu-latest` sans configuration supplémentaire).
+
+== frontend.yml
+
+[source,yaml]
+----
+name: Frontend CI
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      - run: npm ci
+        working-directory: frontend
+
+      - run: npm run lint
+        working-directory: frontend
+
+      - run: npm run build
+        working-directory: frontend
+
+      - run: npm test -- --run
+        working-directory: frontend
+
+  e2e:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with: { node-version: '22' }
+
+      - run: npm ci
+        working-directory: frontend
+
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+
+      - name: Start full stack
+        run: docker compose up --build -d
+        timeout-minutes: 5
+
+      - name: Wait for stack
+        run: |
+          until curl -sf http://localhost:8080/actuator/health; do sleep 2; done
+
+      - run: npm run test:e2e
+        working-directory: frontend
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: frontend/playwright-report/
+----
+
+== docker.yml
+
+[source,yaml]
+----
+name: Docker Build
+on:
+  push:
+    branches: [main]
+
+jobs:
+  compose-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose build
+----
+
+== Matrice de couverture
+
+[cols="2,2,2",options="header"]
+|===
+|Niveau|Outil|Rapport
+|Unitaires backend|JUnit 5 + JaCoCo|Artefact `jacoco-report`
+|Intégration backend|Testcontainers|Console Maven
+|BDD backend|Cucumber|Console Maven
+|Unitaires frontend|Vitest|Console stdout
+|E2E frontend|Playwright|Artefact `playwright-report` (si échec)
+|===
+
+== Bonnes pratiques
+
+* *Jamais* de `mvn package -DskipTests` sur la branche principale — utiliser
+  `mvn verify` qui inclut les tests.
+* Les tests d'intégration Testcontainers sont isolés par classe : chaque
+  `@Container static` démarre et s'arrête avec la classe de test.
+* Playwright en mode CI : `--workers=1` pour éviter les conflits de port sur
+  l'instance unique.
+
+[source,yaml]
+----
+# playwright.config.ts — CI
+workers: process.env.CI ? 1 : undefined,
+----
+
+== Déploiement continu (optionnel)
+
+Pour pousser les images sur un registry et déployer automatiquement :
+
+[source,yaml]
+----
+      - name: Build & push images
+        uses: docker/build-push-action@v5
+        with:
+          context: ./backend/bootstrap
+          push: ${{ github.ref == 'refs/heads/main' }}
+          tags: ghcr.io/${{ github.repository }}/backend:latest
+----
+
+'''
+
+link:03-configuration.adoc[← Configuration] · link:../README.adoc[Index]

@@ -1,0 +1,62 @@
+= 05 — Thèmes clair et sombre
+:toc: left
+:icons: font
+:imagesdir: ../screenshots
+
+link:04-filtres.adoc[← Filtres] · link:../README.adoc[Index]
+
+'''
+
+== Basculer le thème
+
+Le bouton *☾ Sombre* / *☀ Clair* en bas à droite de l'écran bascule entre
+les deux thèmes. La carte change de style simultanément.
+
+[cols="1a,1a",frame=none,grid=none]
+|===
+|image::light-mode.png[Mode clair,title="Mode clair — tuiles liberty OpenFreeMap"]
+|image::dark-mode-full.png[Mode sombre,title="Mode sombre — tuiles dark OpenFreeMap"]
+|===
+
+[cols="1,2,2",options="header"]
+|===
+|Thème|Carte|Interface
+|Clair|Tuiles `liberty` — fond beige/blanc|Arrière-plan blanc, texte gris-900
+|Sombre|Tuiles `dark` — fond ardoise|Arrière-plan gris-950, texte gris-100
+|===
+
+== Préférence système
+
+Au premier chargement, le thème est détecté automatiquement depuis la
+préférence système (`prefers-color-scheme`). Si le système est en mode sombre,
+l'interface démarrera en mode sombre.
+
+== Indicateur de connexion
+
+Le badge en bas à droite indique l'état du flux SSE :
+
+image::connection-badge.png[Zone de contrôle,align=right]
+
+[cols="2,1,3",options="header"]
+|===
+|Badge|Couleur|Signification
+|⟳ Connexion…|Jaune|Premier établissement de la connexion SSE
+|✓ Connecté|Vert|Flux SSE actif, données reçues
+|⟳ Reconnexion…|Orange|Reconnexion en cours après coupure
+|✕ Erreur|Rouge|Connexion perdue — reconnexion dans N secondes
+|===
+
+=== Reconnexion automatique — backoff exponentiel
+
+....
+ Tentative 1 ──►  2 s
+ Tentative 2 ──►  4 s
+ Tentative 3 ──►  8 s
+ Tentative 4 ──► 16 s
+ Tentative 5 ──► 30 s  (plafond)
+ Suivantes   ──► 30 s
+....
+
+'''
+
+link:04-filtres.adoc[← Filtres] · link:../README.adoc[Index]

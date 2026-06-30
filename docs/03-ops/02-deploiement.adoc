@@ -1,0 +1,134 @@
+= 02 — Déploiement Docker Compose
+:toc: left
+:icons: font
+
+link:01-prerequis.adoc[← Prérequis] · link:../README.adoc[Index] · link:03-configuration.adoc[Configuration →]
+
+'''
+
+== Démarrage en une commande
+
+[source,bash]
+----
+# À la racine du dépôt
+docker compose up --build -d
+----
+
+....
+ Services démarrés dans l'ordre :
+ ┌──────────┐    ┌──────────┐
+ │ postgres │    │mosquitto │
+ └────┬─────┘    └─────┬────┘
+      │ healthy         │ healthy
+      ▼                 ▼
+ ┌──────────────────────────┐
+ │        backend            │
+ │  Flyway migrate → Spring  │
+ └────────────┬─────────────┘
+              │ healthy
+     ┌────────┴────────┐
+     ▼                 ▼
+ ┌──────────┐    ┌──────────┐
+ │ simulator│    │ frontend │
+ └──────────┘    └──────────┘
+....
+
+L'interface est disponible sur http://localhost:3000 après ~30 secondes.
+
+== Vérification de l'état des services
+
+[source,bash]
+----
+docker compose ps
+----
+
+Tous les services doivent afficher `healthy` ou `running` :
+
+[source]
+----
+NAME                STATUS          PORTS
+convoyflux-postgres Running (healthy)   5432/tcp
+convoyflux-mosquitto Running (healthy)  1883/tcp
+convoyflux-backend   Running (healthy)  0.0.0.0:8080->8080/tcp
+convoyflux-simulator Running             —
+convoyflux-frontend  Running (healthy)  0.0.0.0:3000->80/tcp
+----
+
+== Logs en temps réel
+
+[source,bash]
+----
+# Tous les services
+docker compose logs -f
+
+# Backend uniquement
+docker compose logs -f backend
+
+# Suivre les messages MQTT reçus
+docker compose logs -f backend | grep "Received telemetry"
+----
+
+== Arrêter l'application
+
+[source,bash]
+----
+# Arrêter et supprimer les conteneurs (volumes conservés)
+docker compose down
+
+# Arrêter et supprimer les conteneurs ET les volumes (reset complet)
+docker compose down -v
+----
+
+== Rebuild après modification du code
+
+[source,bash]
+----
+# Reconstruire uniquement le backend
+docker compose up --build -d backend
+
+# Reconstruire uniquement le frontend
+docker compose up --build -d frontend
+----
+
+== Services individuels (développement)
+
+En développement, on peut lancer seulement l'infrastructure Docker et les
+services applicatifs localement :
+
+[source,bash]
+----
+# Démarrer uniquement postgres + mosquitto
+docker compose up -d postgres mosquitto
+
+# Lancer le backend localement
+cd backend
+mvn spring-boot:run -pl bootstrap
+
+# Lancer le frontend en mode dev
+cd frontend
+npm run dev
+----
+
+Le frontend Vite proxy les requêtes `/api` vers `localhost:8080`
+(configuré dans `vite.config.ts`).
+
+== Séquence de démarrage détaillée
+
+....
+ t=0s    docker compose up
+ t=2s    postgres démarre, PostGIS se charge
+ t=5s    mosquitto démarre
+ t=10s   postgres healthcheck OK
+ t=12s   backend démarre
+ t=14s   Flyway migrate → CREATE TABLE telemetry
+ t=16s   Spring WebFlux Netty écoute sur :8080
+ t=18s   MqttAdapter se connecte à mosquitto
+ t=18s   backend healthcheck OK
+ t=20s   simulator démarre, publie 50 véhicules toutes les ~1 s
+ t=22s   frontend nginx écoute sur :80 (port hôte 3000)
+ t=30s   interface disponible sur http://localhost:3000
+....
+
+'''
+
+link:01-prerequis.adoc[← Prérequis] · link:../README.adoc[Index] · link:03-configuration.adoc[Configuration →]

@@ -1,0 +1,69 @@
+= 03 — Carte temps réel
+:toc: left
+:icons: font
+:imagesdir: ../screenshots
+
+link:02-demarrage-rapide.adoc[← Démarrage rapide] · link:../README.adoc[Index] · link:04-filtres.adoc[Filtres →]
+
+'''
+
+== Présentation de la carte
+
+La carte est centrée sur *Paris* (lat 48.8566, lng 2.3522, zoom 12) au chargement.
+Elle utilise MapLibre GL JS avec les tuiles vectorielles OpenFreeMap — aucune clé d'API requise.
+
+image::map-live.png[Carte en direct,align=center]
+
+== Marqueurs de véhicules
+
+Chaque véhicule est représenté par un *donut coloré* qui :
+
+* tourne selon le *cap* du véhicule (pastille blanche indique la direction)
+* change de couleur selon la *vitesse* instantanée
+* passe en *rouge* lorsqu'il est sélectionné
+
+....
+       ○   ← pastille de cap (direction de déplacement)
+      ◎   ← anneau : vert < 30 km/h | bleu 30-90 | rouge > 90
+....
+
+== Sélectionner un véhicule
+
+*Cliquer* sur un marqueur ouvre le panneau de détail latéral.
+
+image::vehicle-panel.png[Panneau de détail,align=center]
+
+Le panneau affiche en temps réel :
+
+[cols="2,4",options="header"]
+|===
+|Champ|Description
+|Région|Zone géographique MQTT
+|Vitesse|En km/h, mise à jour à chaque trame
+|Cap|Angle en degrés (0° = Nord, 90° = Est)
+|Lat / Lng|Coordonnées GPS WGS-84
+|Màj|Horodatage de la dernière trame reçue
+|Trajectoire|Barre de progression des 50 derniers points
+|===
+
+*Fermer le panneau* : cliquer sur ✕ en haut à droite, ou recliquer le marqueur.
+
+== Trajectoire
+
+Quand un véhicule est sélectionné, sa trajectoire récente (50 points max)
+s'affiche en trait *jaune-ambre* sur la carte.
+
+== Navigation sur la carte
+
+[cols="2,3",options="header"]
+|===
+|Action|Résultat
+|Molette / pinch|Zoom avant / arrière
+|Clic-glisser|Déplacer la vue
+|Double-clic|Zoom avant centré
+|Ctrl + clic-glisser|Incliner / pivoter la carte
+|===
+
+'''
+
+link:02-demarrage-rapide.adoc[← Démarrage rapide] · link:../README.adoc[Index] · link:04-filtres.adoc[Filtres →]

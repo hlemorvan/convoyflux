@@ -1,0 +1,27 @@
+spring:
+  r2dbc:
+    url: ${SPRING_R2DBC_URL:r2dbc:postgresql://localhost:5432/convoyflux}
+    username: ${SPRING_R2DBC_USERNAME:convoyflux}
+    password: ${SPRING_R2DBC_PASSWORD:convoyflux}
+
+  flyway:
+    url: ${SPRING_FLYWAY_URL:jdbc:postgresql://localhost:5432/convoyflux}
+    user: ${SPRING_R2DBC_USERNAME:convoyflux}
+    password: ${SPRING_R2DBC_PASSWORD:convoyflux}
+    locations: classpath:db/migration
+
+  rsocket:
+    server:
+      port: 7000
+      transport: tcp
+
+mqtt:
+  broker:
+    host: ${MQTT_BROKER_HOST:localhost}
+    port: ${MQTT_BROKER_PORT:1883}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics

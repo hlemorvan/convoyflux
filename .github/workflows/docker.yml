@@ -1,0 +1,24 @@
+name: Docker Compose Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker-compose.yml'
+      - '**/Dockerfile'
+      - '.github/workflows/docker.yml'
+
+jobs:
+  compose-build:
+    name: Validate docker compose build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build all images
+        run: docker compose build --no-cache
+        timeout-minutes: 20
+
+      - name: Verify images exist
+        run: docker compose config --images

@@ -1,0 +1,75 @@
+= 04 — Filtres et recherche
+:toc: left
+:icons: font
+:imagesdir: ../screenshots
+
+link:03-carte-temps-reel.adoc[← Carte] · link:../README.adoc[Index] · link:05-modes.adoc[Thèmes →]
+
+'''
+
+== La barre de filtres
+
+La barre en haut de l'écran filtre les véhicules affichés *en temps réel*,
+sans rechargement ni requête serveur — le filtrage s'applique côté client sur
+le store Redux.
+
+image::filters.png[Barre de filtres active,align=center]
+
+== Champs disponibles
+
+=== Recherche par identifiant
+
+Saisir tout ou partie de l'identifiant du véhicule (ex. `v-04`).
+La recherche est insensible à la casse et filtre à la saisie.
+
+....
+ [🔍 Rechercher un véhicule…]
+       v-04  →  affiche v-040 à v-049
+....
+
+=== Filtre par région
+
+Saisir le nom de la région MQTT (ex. `ile-de-france`).
+Correspond à la deuxième partie du topic : `fleet/{région}/vehicle/...`
+
+=== Curseur de vitesse minimum
+
+Glisser le curseur pour n'afficher que les véhicules dépassant un seuil.
+Plage : 0 – 200 km/h, pas de 10 km/h.
+
+....
+ Vitesse min [══════●════] 60 km/h  →  masque les véhicules < 60 km/h
+....
+
+== Comportement des filtres combinés
+
+Les trois filtres sont appliqués en *ET logique* :
+un véhicule est affiché uniquement s'il satisfait simultanément les trois critères.
+
+....
+ Véhicule reçu via SSE
+       │
+       ▼
+ searchId vide ou match ?
+       │ Non ──► Masqué
+       │ Oui
+       ▼
+ region vide ou match ?
+       │ Non ──► Masqué
+       │ Oui
+       ▼
+ speed ≥ minSpeed ?
+       │ Non ──► Masqué
+       │ Oui
+       ▼
+ Affiché sur la carte
+....
+
+== Réinitialiser les filtres
+
+Effacer les champs texte et remettre le curseur à 0.
+Chaque champ est indépendant — il n'existe pas de bouton "Tout effacer".
+
+'''
+
+link:03-carte-temps-reel.adoc[← Carte] · link:../README.adoc[Index] · link:05-modes.adoc[Thèmes →]

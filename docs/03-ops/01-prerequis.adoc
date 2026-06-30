@@ -1,0 +1,77 @@
+= 01 — Prérequis
+:toc: left
+:icons: font
+
+link:../02-developpeur/05-tests-et-api.adoc[← Tests] · link:../README.adoc[Index] · link:02-deploiement.adoc[Déploiement →]
+
+'''
+
+== Environnement minimal
+
+[cols="2,1,2",options="header"]
+|===
+|Outil|Version minimum|Vérification
+|Docker Engine|24.0|`docker --version`
+|Docker Compose v2|2.20|`docker compose version`
+|Java (JDK)|25|`java -version`
+|Maven|3.9|`mvn -version`
+|Node.js|22 LTS|`node --version`
+|npm|10|`npm --version`
+|===
+
+NOTE: Pour exécuter les tests d'intégration (Testcontainers), Docker *doit*
+être disponible sur la machine de CI/CD. Pas besoin d'un daemon Docker
+supplémentaire : Testcontainers utilise celui du système.
+
+== Pour le déploiement en production
+
+[cols="2,3",options="header"]
+|===
+|Composant|Exigences
+|PostgreSQL 16+|Extension `postgis` installée
+|Mosquitto 2.x|`listener 1883`, `allow_anonymous true`
+|JVM Runtime|`eclipse-temurin:25-jre` (ou équivalent)
+|Nginx|Proxy inverse pour le frontend (optionnel)
+|===
+
+== Ports utilisés
+
+[cols="1,2,2",options="header"]
+|===
+|Port|Service|Description
+|`1883`|Mosquitto|MQTT broker (TCP)
+|`5432`|PostgreSQL|Base de données R2DBC + Flyway
+|`8080`|Backend Spring|HTTP REST + SSE
+|`7000`|Backend RSocket|RSocket TCP
+|`3000`|Frontend Nginx|Interface web (production)
+|`5173`|Frontend Vite|Interface web (développement)
+|===
+
+== Ressources recommandées
+
+[cols="2,2,2",options="header"]
+|===
+|Service|CPU|RAM
+|PostgreSQL + PostGIS|0.5 vCPU|512 MB
+|Backend Spring Boot|0.5 vCPU|512 MB
+|Simulator (50 véhicules)|0.2 vCPU|128 MB
+|Frontend Nginx|0.1 vCPU|32 MB
+|Mosquitto|0.1 vCPU|32 MB
+|===
+
+== Vérification rapide
+
+[source,bash]
+----
+# Vérifier que Docker fonctionne
+docker run --rm hello-world
+
+# Vérifier que les ports sont libres
+for port in 1883 5432 8080 7000 3000; do
+  nc -z localhost $port && echo "⚠ Port $port occupé" || echo "✓ Port $port libre"
+done
+----
+
+'''
+
+link:../02-developpeur/05-tests-et-api.adoc[← Tests] · link:../README.adoc[Index] · link:02-deploiement.adoc[Déploiement →]

@@ -1,0 +1,93 @@
+= 01 — Présentation de convoyflux
+:toc: left
+:icons: font
+:imagesdir: ../screenshots
+
+link:../README.adoc[← Index] · link:02-demarrage-rapide.adoc[Suivant : Démarrage rapide →]
+
+'''
+
+== Qu'est-ce que convoyflux ?
+
+*convoyflux* est une plateforme de suivi de flotte en temps réel, réactive de bout en bout.
+50 véhicules simulés publient leur position chaque seconde via MQTT ; le backend ingère,
+persiste et rediffuse en temps réel ; le frontend affiche chaque mouvement sur une carte
+WebGL sans rechargement de page.
+
+image::overview.png[Vue d'ensemble de l'interface,align=center]
+
+== Fonctionnalités principales
+
+=== Carte temps réel
+
+Les véhicules s'affichent sous forme de *donuts colorés* sur une carte
+https://maplibre.org[MapLibre GL JS] centrée sur Paris, alimentée par les tuiles
+vectorielles gratuites https://openfreemap.org[OpenFreeMap] (aucune clé d'API).
+
+La couleur du donut indique la vitesse instantanée :
+
+[cols="1,3",options="header"]
+|===
+|Couleur|Vitesse
+|🟢 Vert|< 30 km/h
+|🔵 Bleu|30 – 90 km/h
+|🔴 Rouge|> 90 km/h
+|===
+
+image::map-live.png[Carte en direct avec marqueurs,align=center]
+
+=== Panneau de détail véhicule
+
+Un clic sur un marqueur ouvre un *panneau latéral* affichant en temps réel :
+région, vitesse, cap, coordonnées GPS, horodatage, et une barre de progression
+représentant la trajectoire récente (50 derniers points).
+
+image::vehicle-panel.png[Panneau de détail d'un véhicule,align=center]
+
+=== Filtres en temps réel
+
+La barre de filtres permet de restreindre les véhicules affichés sans rechargement :
+recherche par identifiant, filtre par région, curseur de vitesse minimum.
+
+image::filters.png[Barre de filtres,align=center]
+
+=== Mode sombre / clair
+
+Un bouton bascule entre thème clair (tuiles `liberty`) et sombre (tuiles `dark`).
+
+[cols="1a,1a",frame=none,grid=none]
+|===
+|image::light-mode.png[Mode clair]
+|image::dark-mode-full.png[Mode sombre]
+|===
+
+=== Reconnexion automatique
+
+En cas de perte du flux SSE, le hook `useTelemetryStream` tente une reconnexion
+avec *backoff exponentiel* (délai × 2 à chaque tentative, plafonné à 30 s).
+L'état est visible dans le badge en bas à droite.
+
+== Stack technologique
+
+....
+ ┌─────────────────────────────────────────────────────────────────┐
+ │                         Backend                                  │
+ │  Java 25 · Spring Boot 4 · Spring WebFlux · R2DBC               │
+ │  PostgreSQL/PostGIS · HiveMQ MQTT Client · RSocket TCP          │
+ ├─────────────────────────────────────────────────────────────────┤
+ │                         Frontend                                 │
+ │  React 19 · Redux Toolkit · MapLibre GL JS                      │
+ │  Tailwind CSS v4 · TypeScript · Vite 6                          │
+ ├─────────────────────────────────────────────────────────────────┤
+ │                         Infrastructure                           │
+ │  Mosquitto MQTT broker · Docker Compose · GitHub Actions CI     │
+ ├─────────────────────────────────────────────────────────────────┤
+ │                         Tests                                    │
+ │  JUnit 5 + StepVerifier · Testcontainers · Cucumber BDD        │
+ │  Vitest + React Testing Library · Playwright E2E               │
+ └─────────────────────────────────────────────────────────────────┘
+....
+
+'''
+
+link:../README.adoc[← Index] · link:02-demarrage-rapide.adoc[Suivant : Démarrage rapide →]

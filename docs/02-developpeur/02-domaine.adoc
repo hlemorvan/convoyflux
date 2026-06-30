@@ -1,0 +1,121 @@
+= 02 — Domaine métier
+:toc: left
+:icons: font
+
+link:01-architecture.adoc[← Architecture] · link:../README.adoc[Index] · link:03-backend.adoc[Backend →]
+
+'''
+
+== Modèle du domaine
+
+Le module `domain` est en *Java pur* — aucune dépendance Spring, uniquement
+`reactor-core` pour `Flux`/`Mono` dans les interfaces de port.
+
+....
+ ┌─────────────────────────────────────────────────────────────────────┐
+ │                           domain/model                              │
+ │                                                                     │
+ │  ┌──────────────┐   ┌──────────────┐   ┌──────────────────────┐   │
+ │  │  VehicleId   │   │    Region    │   │       GeoPoint        │   │
+ │  │ ──────────── │   │ ──────────── │   │ ──────────────────── │   │
+ │  │ String value │   │ String name  │   │ double lat            │   │
+ │  └──────┬───────┘   └──────┬───────┘   │ double lng            │   │
+ │         │                  │           └──────────┬────────────┘   │
+ │         └──────────────────┼──────────────────────┘                │
+ │                            │  composé dans                         │
+ │                    ┌───────▼──────────────────────────────┐        │
+ │                    │            Telemetry                  │        │
+ │                    │ ──────────────────────────────────── │        │
+ │                    │ VehicleId vehicleId                   │        │
+ │                    │ Region    region                      │        │
+ │                    │ GeoPoint  position                    │        │
+ │                    │ double    speed                       │        │
+ │                    │ double    heading                     │        │
+ │                    │ Instant   timestamp                   │        │
+ │                    └───────────────────────────────────────┘        │
+ └─────────────────────────────────────────────────────────────────────┘
+
+ ┌─────────────────────────────────────────────────────────────────────┐
+ │                           domain/port                               │
+ │                                                                     │
+ │  port/in  (pilotés par l'application)                               │
+ │  ┌─────────────────────────────────────┐                           │
+ │  │  IngestTelemetryUseCase             │                           │
+ │  │  + ingest(Telemetry) : Mono<Void>  │                           │
+ │  │                                     │                           │
+ │  │  QueryHistoryUseCase                │                           │
+ │  │  + history(VehicleId, int)          │                           │
+ │  │             : Flux<Telemetry>       │                           │
+ │  └─────────────────────────────────────┘                           │
+ │                                                                     │
+ │  port/out  (implémentés par l'infrastructure)                       │
+ │  ┌─────────────────────────────────────┐                           │
+ │  │  TelemetryRepository                │                           │
+ │  │  + save(Telemetry) : Mono<Void>    │                           │
+ │  │  + findByVehicleId(VehicleId, int)  │                           │
+ │  │             : Flux<Telemetry>       │                           │
+ │  │                                     │                           │
+ │  │  TelemetryBroadcast                 │                           │
+ │  │  + publish(Telemetry) : void        │                           │
+ │  │  + asFlux() : Flux<Telemetry>       │                           │
+ │  └─────────────────────────────────────┘                           │
+ └─────────────────────────────────────────────────────────────────────┘
+....
+
+== Value Objects
+
+Tous les modèles du domaine sont des *Java records* avec validation dans le
+constructeur compact :
+
+[source,java]
+----
+public record VehicleId(String value) {
+    public VehicleId {
+        if (value == null || value.isBlank())
+            throw new IllegalArgumentException("VehicleId must not be blank");
+    }
+}
+
+public record GeoPoint(double lat, double lng) {
+    public GeoPoint {
+        if (lat < -90  || lat > 90)   throw new IllegalArgumentException("lat out of range");
+        if (lng < -180 || lng > 180)  throw new IllegalArgumentException("lng out of range");
+    }
+}
+----
+
+== Ports entrants
+
+[cols="3,4,3",options="header"]
+|===
+|Interface|Méthode|Appelant
+|`IngestTelemetryUseCase`|`ingest(Telemetry) : Mono<Void>`|`MqttAdapterSubscriber`
+|`QueryHistoryUseCase`|`history(VehicleId, int) : Flux<Telemetry>`|`VehicleHistoryController`
+|===
+
+== Ports sortants
+
+[cols="3,3,2",options="header"]
+|===
+|Interface|Implémentation|Technologie
+|`TelemetryRepository`|`TelemetryRepositoryAdapter`|R2DBC + PostgreSQL
+|`TelemetryBroadcast`|`TelemetrySinkBroadcast`|Reactor `Sinks.Many`
+|===
+
+== Règle de backpressure
+
+`TelemetrySinkBroadcast` utilise `Sinks.many().multicast().directBestEffort()` :
+si un abonné SSE est lent, ses trames sont droppées *individuellement* sans
+bloquer les autres ni le producteur MQTT.
+
+[source,java]
+----
+// directBestEffort() : multicast sans blocage, drop individuel pour les lents
+// (onBackpressureLatest n'existe que sur unicast — ne pas utiliser ici)
+private final Sinks.Many<Telemetry> sink =
+    Sinks.many().multicast().directBestEffort();
+----
+
+'''
+
+link:01-architecture.adoc[← Architecture] · link:../README.adoc[Index] · link:03-backend.adoc[Backend →]

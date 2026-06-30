@@ -1,0 +1,70 @@
+version: '3.9'
+
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./docker/mosquitto/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+
+  postgres:
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: convoyflux
+      POSTGRES_USER: ${DB_USER:-convoyflux}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-convoyflux}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U convoyflux"]
+      interval: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: bootstrap/Dockerfile
+    ports:
+      - "8080:8080"
+      - "7000:7000"
+    environment:
+      SPRING_R2DBC_URL: r2dbc:postgresql://postgres:5432/convoyflux
+      SPRING_R2DBC_USERNAME: ${DB_USER:-convoyflux}
+      SPRING_R2DBC_PASSWORD: ${DB_PASSWORD:-convoyflux}
+      SPRING_FLYWAY_URL: jdbc:postgresql://postgres:5432/convoyflux
+      MQTT_BROKER_HOST: mosquitto
+      MQTT_BROKER_PORT: "1883"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      mosquitto:
+        condition: service_started
+
+  simulator:
+    build:
+      context: ./simulator
+      dockerfile: Dockerfile
+    environment:
+      MQTT_BROKER_HOST: mosquitto
+      MQTT_BROKER_PORT: "1883"
+      VEHICLE_COUNT: "${VEHICLE_COUNT:-50}"
+      REGION: ile-de-france
+    depends_on:
+      - mosquitto
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8080
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
