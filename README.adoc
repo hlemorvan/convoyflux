@@ -36,12 +36,9 @@ image::overview.png[Vue d'ensemble de l'interface,align=center]
 centrée sur Paris (lat 48.8566, lng 2.3522, zoom 12), alimentée par les tuiles vectorielles
 gratuites https://openfreemap.org[OpenFreeMap] (aucune clé d'API requise).
 
-Chaque marqueur est une flèche SVG **orientée selon le cap** (`heading`) du véhicule,
-dont la couleur indique la vitesse :
-
-* 🟢 vert — < 30 km/h
-* 🔵 bleu — 30–90 km/h
-* 🔴 rouge — > 90 km/h
+Chaque marqueur est un **donut SVG** qui tourne selon le cap (`heading`) du véhicule —
+la pastille blanche en haut indique la direction de déplacement.
+Le marqueur passe en rouge lorsqu'il est sélectionné.
 
 image::map-live.png[Carte en direct avec marqueurs orientés,align=center]
 
