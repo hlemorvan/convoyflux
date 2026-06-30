@@ -25,6 +25,9 @@ dist/
 dist-ssr/
 *.local
 
+# TypeScript
+*.tsbuildinfo
+
 # Vite
 .vite/
 
